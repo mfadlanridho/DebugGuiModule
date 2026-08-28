@@ -2,8 +2,8 @@
 --[[
     DebugGuiModule (init.luau)
     Zero-dependency, standalone Developer Debug GUI & 3D Gizmo Suite for Roblox games.
-    100% procedural dark UI generated in code (no drag-and-drop UI required).
-    Hotkey: 'P' key (or toggle via API). Studio & Developer UserID permissions protected.
+    Renders Header, Subtitle, Sidebar Tabs, Status Rows, Action Buttons, Sliders, and 3D Gizmos.
+    Hotkey: 'P' key. Studio & Developer UserID permissions protected.
 --]]
 
 local Players = game:GetService("Players")
@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local script = script
 
 local Types = require(script.Types)
+local DebugGuiView = require(script.DebugGuiView)
 local GizmoRenderer = require(script.GizmoRenderer)
 
 export type DebugPanel = Types.DebugPanel
@@ -25,10 +26,11 @@ DebugGuiModule.StudioOnly = true
 DebugGuiModule.AllowedUserIds = {} :: { number }
 
 local localPlayer = Players.LocalPlayer
-local panelsByKey: { [string]: DebugPanel } = {}
+local panelsByKey: { [string]: any } = {}
+local selectedPanelKey: string? = nil
 local isGuiVisible = false
-local screenGui: ScreenGui? = nil
-local mainFrame: Frame? = nil
+local viewInstance: any = nil
+local initialized = false
 
 local function isAllowed(): boolean
 	if DebugGuiModule.StudioOnly and RunService:IsStudio() then
@@ -42,11 +44,61 @@ local function isAllowed(): boolean
 	return false
 end
 
+local function renderGui()
+	if not viewInstance then return end
+
+	local orderedPanels = {}
+	for key, panel in pairs(panelsByKey) do
+		table.insert(orderedPanels, {
+			key = key,
+			displayName = panel.displayName,
+			order = panel.order or 10,
+			selected = (key == selectedPanelKey),
+		})
+	end
+	table.sort(orderedPanels, function(a, b) return a.order < b.order end)
+
+	if not selectedPanelKey and #orderedPanels > 0 then
+		selectedPanelKey = orderedPanels[1].key
+		orderedPanels[1].selected = true
+	end
+
+	local rows = {}
+	if selectedPanelKey and panelsByKey[selectedPanelKey] then
+		local activePanel = panelsByKey[selectedPanelKey]
+		-- Add status entries
+		for _, entry in pairs(activePanel.entries) do
+			table.insert(rows, {
+				key = entry.key,
+				displayName = entry.label,
+				value = entry.value,
+				rowType = "value",
+			})
+		end
+		-- Add action buttons
+		for _, action in pairs(activePanel.actions) do
+			table.insert(rows, {
+				key = action.key,
+				displayName = action.label,
+				value = "Execute",
+				rowType = "action",
+				callback = action.callback,
+			})
+		end
+	end
+
+	viewInstance:render({
+		visible = isGuiVisible,
+		title = "Developer Debug",
+		subtitle = "Studio-only debug panel",
+		hintText = string.format("%s to toggle", DebugGuiModule.ToggleKey.Name),
+		panels = orderedPanels,
+		rows = rows,
+	})
+end
+
 --- Registers or gets a debug panel tab by key.
--- @param key string - Unique identifier for the panel tab
--- @param displayName string - Display label in the UI tab list
--- @param order number? - Sorting priority (lower numbers appear first)
-function DebugGuiModule.registerPanel(key: string, displayName: string, order: number?): DebugPanel
+function DebugGuiModule.registerPanel(key: string, displayName: string, order: number?): any
 	local panel = panelsByKey[key]
 	if not panel then
 		panel = {
@@ -58,59 +110,68 @@ function DebugGuiModule.registerPanel(key: string, displayName: string, order: n
 		}
 		panelsByKey[key] = panel
 	end
+
+	if not selectedPanelKey then
+		selectedPanelKey = key
+	end
+
+	renderGui()
 	return panel
 end
 
 --- Updates a status row entry on a debug panel tab.
--- @param panelKey string
--- @param entryKey string
--- @param label string
--- @param value string
--- @param color Color3?
-function DebugGuiModule.setEntry(panelKey: string, entryKey: string, label: string, value: string, color: Color3?)
-	local panel = panelsByKey[panelKey]
-	if not panel then return end
+function DebugGuiModule.setEntry(panelKey: string, entryKey: string, label: string, value: string)
+	local panel = panelsByKey[panelKey] or DebugGuiModule.registerPanel(panelKey, panelKey)
 	panel.entries[entryKey] = {
 		key = entryKey,
 		label = label,
 		value = value,
-		color = color or Color3.fromRGB(240, 240, 240),
 	}
+	renderGui()
 end
 
 --- Adds an interactive action button to a debug panel tab.
--- @param panelKey string
--- @param actionKey string
--- @param label string
--- @param callback () -> ()
 function DebugGuiModule.setAction(panelKey: string, actionKey: string, label: string, callback: () -> ())
-	local panel = panelsByKey[panelKey]
-	if not panel then return end
+	local panel = panelsByKey[panelKey] or DebugGuiModule.registerPanel(panelKey, panelKey)
 	panel.actions[actionKey] = {
 		key = actionKey,
 		label = label,
 		callback = callback,
 	}
-end
-
---- Initializes the hotkey listener ('P' key) and ScreenGui lifecycle.
-function DebugGuiModule.Init()
-	if not isAllowed() then return end
-
-	-- Bind 'P' hotkey for toggling debug menu visibility
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		if input.KeyCode == DebugGuiModule.ToggleKey then
-			DebugGuiModule.toggleVisibility()
-		end
-	end)
+	renderGui()
 end
 
 --- Toggles debug menu overlay open/closed.
 function DebugGuiModule.toggleVisibility()
 	if not isAllowed() then return end
 	isGuiVisible = not isGuiVisible
-	-- UI visibility toggle handling
+
+	if isGuiVisible and not viewInstance then
+		local playerGui = localPlayer:WaitForChild("PlayerGui")
+		viewInstance = DebugGuiView.new(playerGui)
+
+		viewInstance.onSelectPanel = function(key: string)
+			selectedPanelKey = key
+			renderGui()
+		end
+	end
+
+	renderGui()
+end
+
+--- Initializes the hotkey listener ('P' key).
+function DebugGuiModule.Init()
+	if initialized then return end
+	if not isAllowed() then return end
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == DebugGuiModule.ToggleKey then
+			DebugGuiModule.toggleVisibility()
+		end
+	end)
+
+	initialized = true
 end
 
 return DebugGuiModule
