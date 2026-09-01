@@ -23,6 +23,7 @@ local DebugGuiModule = {}
 DebugGuiModule.GizmoRenderer = GizmoRenderer
 DebugGuiModule.ToggleKey = Enum.KeyCode.P
 DebugGuiModule.StudioOnly = true
+DebugGuiModule.EnableLogging = false :: boolean -- Configurable logging toggle
 DebugGuiModule.AllowedUserIds = {} :: { number }
 
 local localPlayer = Players.LocalPlayer
@@ -31,6 +32,13 @@ local selectedPanelKey: string? = nil
 local isGuiVisible = false
 local viewInstance: any = nil
 local initialized = false
+
+-- Centralized logging helper controlled by DebugGuiModule.EnableLogging
+local function log(message: string, ...: any)
+	if DebugGuiModule.EnableLogging then
+		print(string.format("[DebugGuiModule] " .. message, ...))
+	end
+end
 
 local function isAllowed(): boolean
 	if DebugGuiModule.StudioOnly and RunService:IsStudio() then
@@ -109,6 +117,7 @@ function DebugGuiModule.registerPanel(key: string, displayName: string, order: n
 			actions = {},
 		}
 		panelsByKey[key] = panel
+		log("📌 Registered debug panel tab: %q (%s)", displayName, key)
 	end
 
 	if not selectedPanelKey then
@@ -143,14 +152,17 @@ end
 
 --- Toggles debug menu overlay open/closed.
 function DebugGuiModule.toggleVisibility()
+	log("🔄 toggleVisibility called! isAllowed=%s", tostring(isAllowed()))
 	if not isAllowed() then return end
 	isGuiVisible = not isGuiVisible
+	log("👁️ Debug GUI visibility toggled to: %s", tostring(isGuiVisible))
 
 	if isGuiVisible and not viewInstance then
 		local playerGui = localPlayer:WaitForChild("PlayerGui")
 		viewInstance = DebugGuiView.new(playerGui)
 
 		viewInstance.onSelectPanel = function(key: string)
+			log("🖱️ Panel tab selected: %q", key)
 			selectedPanelKey = key
 			renderGui()
 		end
@@ -161,17 +173,25 @@ end
 
 --- Initializes the hotkey listener ('P' key).
 function DebugGuiModule.Init()
+	log("🚀 Init() called! initialized=%s, isAllowed=%s", tostring(initialized), tostring(isAllowed()))
 	if initialized then return end
-	if not isAllowed() then return end
+	if not isAllowed() then
+		if DebugGuiModule.EnableLogging then
+			warn("[DebugGuiModule] ⚠️ Init cancelled: isAllowed() returned false!")
+		end
+		return
+	end
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
 		if input.KeyCode == DebugGuiModule.ToggleKey then
+			log("🔑 'P' key pressed! gameProcessed=%s", tostring(gameProcessed))
+			if gameProcessed then return end
 			DebugGuiModule.toggleVisibility()
 		end
 	end)
 
 	initialized = true
+	log("✅ Initialized successfully! Registered ToggleKey: %s", DebugGuiModule.ToggleKey.Name)
 end
 
 return DebugGuiModule
