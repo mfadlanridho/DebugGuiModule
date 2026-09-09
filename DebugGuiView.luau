@@ -127,6 +127,9 @@ function DebugGuiView.new(playerGui)
 
 	local tabList = Instance.new("ScrollingFrame")
 	tabList.Name = "TabList"
+	tabList.Active = true
+	tabList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	tabList.ScrollingDirection = Enum.ScrollingDirection.Y
 	tabList.BackgroundTransparency = 1
 	tabList.Size = UDim2.fromScale(1, 1)
 	tabList.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -157,6 +160,9 @@ function DebugGuiView.new(playerGui)
 
 	local rowList = Instance.new("ScrollingFrame")
 	rowList.Name = "RowList"
+	rowList.Active = true
+	rowList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	rowList.ScrollingDirection = Enum.ScrollingDirection.Y
 	rowList.BackgroundTransparency = 1
 	rowList.Size = UDim2.fromScale(1, 1)
 	rowList.CanvasSize = UDim2.new(0, 0, 0, 0)
