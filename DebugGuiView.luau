@@ -211,110 +211,191 @@ function DebugGuiView:render(model)
 	self.subtitleLabel.Text = model.subtitle or "Studio-only debug panel"
 	self.hintLabel.Text = model.hintText or "P to toggle"
 
-	-- Render Sidebar Tabs
-	clearChildren(self.tabList)
-	for i, panel in ipairs(model.panels or {}) do
-		local tabButton = Instance.new("TextButton")
-		tabButton.Name = "Tab_" .. panel.key
-		tabButton.BackgroundColor3 = if panel.selected then PANEL_SURFACE_ALT else PANEL_SURFACE
-		tabButton.Size = UDim2.new(1, 0, 0, 28)
-		tabButton.Font = Enum.Font.GothamMedium
-		tabButton.Text = panel.displayName
-		tabButton.TextColor3 = if panel.selected then PANEL_ACCENT else PANEL_TEXT_MUTED
-		tabButton.TextSize = 12
-		tabButton.LayoutOrder = i
-		tabButton.Parent = self.tabList
-		createCorner(tabButton, 8)
-
-		tabButton.MouseButton1Click:Connect(function()
-			if self.onSelectPanel then
-				self.onSelectPanel(panel.key)
-			end
-		end)
+	-- Render Sidebar Tabs with in-place reconciliation
+	local existingTabs: { [string]: Instance } = {}
+	for _, child in ipairs(self.tabList:GetChildren()) do
+		if not (child:IsA("UIListLayout") or child:IsA("UIPadding")) then
+			existingTabs[child.Name] = child
+		end
 	end
 
-	-- Render Panel Rows & Buttons
-	clearChildren(self.rowList)
+	for i, panel in ipairs(model.panels or {}) do
+		local tabKey = "Tab_" .. panel.key
+		local tabButton = existingTabs[tabKey] :: TextButton?
+		if tabButton ~= nil then
+			-- Update in-place
+			tabButton.BackgroundColor3 = if panel.selected then PANEL_SURFACE_ALT else PANEL_SURFACE
+			tabButton.TextColor3 = if panel.selected then PANEL_ACCENT else PANEL_TEXT_MUTED
+			tabButton.Text = panel.displayName
+			tabButton.LayoutOrder = i
+			existingTabs[tabKey] = nil
+		else
+			-- Create new
+			tabButton = Instance.new("TextButton")
+			tabButton.Name = tabKey
+			tabButton.BackgroundColor3 = if panel.selected then PANEL_SURFACE_ALT else PANEL_SURFACE
+			tabButton.Size = UDim2.new(1, 0, 0, 28)
+			tabButton.Font = Enum.Font.GothamMedium
+			tabButton.Text = panel.displayName
+			tabButton.TextColor3 = if panel.selected then PANEL_ACCENT else PANEL_TEXT_MUTED
+			tabButton.TextSize = 12
+			tabButton.LayoutOrder = i
+			tabButton.Parent = self.tabList
+			createCorner(tabButton, 8)
+
+			tabButton.MouseButton1Click:Connect(function()
+				if self.onSelectPanel then
+					self.onSelectPanel(panel.key)
+				end
+			end)
+		end
+	end
+
+	for _, stale in pairs(existingTabs) do
+		stale:Destroy()
+	end
+
+	-- Render Panel Rows & Buttons with in-place reconciliation
+	local existingRows: { [string]: Instance } = {}
+	for _, child in ipairs(self.rowList:GetChildren()) do
+		if not (child:IsA("UIListLayout") or child:IsA("UIPadding")) then
+			existingRows[child.Name] = child
+		end
+	end
+
 	local rows = model.rows or {}
 
 	if #rows == 0 then
 		self.placeholderLabel.Text = model.placeholderText or "No data registered for this panel."
 		self.placeholderLabel.Visible = true
 		self.rowList.Visible = false
+		for _, stale in pairs(existingRows) do
+			stale:Destroy()
+		end
 	else
 		self.placeholderLabel.Visible = false
 		self.rowList.Visible = true
 
 		for i, row in ipairs(rows) do
-			local rowFrame = Instance.new("Frame")
-			rowFrame.Name = "Row_" .. row.key
-			rowFrame.BackgroundColor3 = PANEL_SURFACE_ALT
-			rowFrame.Size = UDim2.new(1, 0, 0, 32)
-			rowFrame.LayoutOrder = i
-			rowFrame.Parent = self.rowList
-			createCorner(rowFrame, 6)
+			local rowKey = "Row_" .. row.key
+			local rowFrame = existingRows[rowKey] :: Frame?
 
-			local label = Instance.new("TextLabel")
-			label.Name = "Label"
-			label.BackgroundTransparency = 1
-			label.Position = UDim2.fromOffset(8, 0)
-			label.Size = UDim2.new(0.5, -8, 1, 0)
-			label.Font = Enum.Font.GothamMedium
-			label.Text = row.displayName
-			label.TextColor3 = PANEL_TEXT
-			label.TextSize = 12
-			label.TextXAlignment = Enum.TextXAlignment.Left
-			label.Parent = rowFrame
-
-			if row.rowType == "action" then
-				local button = Instance.new("TextButton")
-				button.Name = "ActionButton"
-				button.BackgroundColor3 = PANEL_ACCENT
-				button.Position = UDim2.new(0.5, 0, 0.15, 0)
-				button.Size = UDim2.new(0.5, -8, 0.7, 0)
-				button.Font = Enum.Font.GothamBold
-				button.Text = row.value or "Execute"
-				button.TextColor3 = PANEL_BACKGROUND
-				button.TextSize = 11
-				button.Parent = rowFrame
-				createCorner(button, 6)
-
-				button.MouseButton1Click:Connect(function()
-					if row.callback then
-						row.callback()
-					end
-				end)
-			elseif row.rowType == "toggle" then
-				local toggleBtn = Instance.new("TextButton")
-				toggleBtn.Name = "ToggleBtn"
-				toggleBtn.BackgroundColor3 = if row.value then PANEL_ACCENT else PANEL_BACKGROUND
-				toggleBtn.Position = UDim2.new(0.85, 0, 0.2, 0)
-				toggleBtn.Size = UDim2.new(0.15, -4, 0.6, 0)
-				toggleBtn.Font = Enum.Font.GothamBold
-				toggleBtn.Text = if row.value then "ON" else "OFF"
-				toggleBtn.TextColor3 = if row.value then PANEL_BACKGROUND else PANEL_TEXT_MUTED
-				toggleBtn.TextSize = 10
-				toggleBtn.Parent = rowFrame
-				createCorner(toggleBtn, 4)
-
-				toggleBtn.MouseButton1Click:Connect(function()
-					if self.onToggleRow then
-						self.onToggleRow(row.key, not row.value)
-					end
-				end)
-			else
-				local valLabel = Instance.new("TextLabel")
-				valLabel.Name = "Value"
-				valLabel.BackgroundTransparency = 1
-				valLabel.Position = UDim2.new(0.5, 0, 0, 0)
-				valLabel.Size = UDim2.new(0.5, -8, 1, 0)
-				valLabel.Font = Enum.Font.Gotham
-				valLabel.Text = tostring(row.value)
-				valLabel.TextColor3 = PANEL_TEXT_MUTED
-				valLabel.TextSize = 12
-				valLabel.TextXAlignment = Enum.TextXAlignment.Right
-				valLabel.Parent = rowFrame
+			if rowFrame ~= nil and rowFrame:GetAttribute("RowType") ~= row.rowType then
+				rowFrame:Destroy()
+				rowFrame = nil
 			end
+
+			if rowFrame ~= nil then
+				-- Update in-place
+				rowFrame.LayoutOrder = i
+				local label = rowFrame:FindFirstChild("Label") :: TextLabel?
+				if label then
+					label.Text = row.displayName
+				end
+
+				if row.rowType == "action" then
+					local button = rowFrame:FindFirstChild("ActionButton") :: TextButton?
+					if button then
+						button.Text = row.value or "Execute"
+					end
+					(rowFrame :: any)._actionCallback = row.callback
+				elseif row.rowType == "toggle" then
+					local toggleBtn = rowFrame:FindFirstChild("ToggleBtn") :: TextButton?
+					if toggleBtn then
+						toggleBtn.BackgroundColor3 = if row.value then PANEL_ACCENT else PANEL_BACKGROUND
+						toggleBtn.Text = if row.value then "ON" else "OFF"
+						toggleBtn.TextColor3 = if row.value then PANEL_BACKGROUND else PANEL_TEXT_MUTED
+					end
+					(rowFrame :: any)._toggleValue = row.value
+				else
+					local valLabel = rowFrame:FindFirstChild("Value") :: TextLabel?
+					if valLabel then
+						valLabel.Text = tostring(row.value)
+					end
+				end
+
+				existingRows[rowKey] = nil
+			else
+				-- Create new rowFrame
+				rowFrame = Instance.new("Frame")
+				rowFrame.Name = rowKey
+				rowFrame:SetAttribute("RowType", row.rowType)
+				rowFrame.BackgroundColor3 = PANEL_SURFACE_ALT
+				rowFrame.Size = UDim2.new(1, 0, 0, 32)
+				rowFrame.LayoutOrder = i
+				rowFrame.Parent = self.rowList
+				createCorner(rowFrame, 6)
+
+				local label = Instance.new("TextLabel")
+				label.Name = "Label"
+				label.BackgroundTransparency = 1
+				label.Position = UDim2.fromOffset(8, 0)
+				label.Size = UDim2.new(0.5, -8, 1, 0)
+				label.Font = Enum.Font.GothamMedium
+				label.Text = row.displayName
+				label.TextColor3 = PANEL_TEXT
+				label.TextSize = 12
+				label.TextXAlignment = Enum.TextXAlignment.Left
+				label.Parent = rowFrame
+
+				if row.rowType == "action" then
+					(rowFrame :: any)._actionCallback = row.callback
+					local button = Instance.new("TextButton")
+					button.Name = "ActionButton"
+					button.BackgroundColor3 = PANEL_ACCENT
+					button.Position = UDim2.new(0.5, 0, 0.15, 0)
+					button.Size = UDim2.new(0.5, -8, 0.7, 0)
+					button.Font = Enum.Font.GothamBold
+					button.Text = row.value or "Execute"
+					button.TextColor3 = PANEL_BACKGROUND
+					button.TextSize = 11
+					button.Parent = rowFrame
+					createCorner(button, 6)
+
+					button.MouseButton1Click:Connect(function()
+						local cb = (rowFrame :: any)._actionCallback
+						if cb then
+							cb()
+						end
+					end)
+				elseif row.rowType == "toggle" then
+					(rowFrame :: any)._toggleValue = row.value
+					local toggleBtn = Instance.new("TextButton")
+					toggleBtn.Name = "ToggleBtn"
+					toggleBtn.BackgroundColor3 = if row.value then PANEL_ACCENT else PANEL_BACKGROUND
+					toggleBtn.Position = UDim2.new(0.85, 0, 0.2, 0)
+					toggleBtn.Size = UDim2.new(0.15, -4, 0.6, 0)
+					toggleBtn.Font = Enum.Font.GothamBold
+					toggleBtn.Text = if row.value then "ON" else "OFF"
+					toggleBtn.TextColor3 = if row.value then PANEL_BACKGROUND else PANEL_TEXT_MUTED
+					toggleBtn.TextSize = 10
+					toggleBtn.Parent = rowFrame
+					createCorner(toggleBtn, 4)
+
+					toggleBtn.MouseButton1Click:Connect(function()
+						if self.onToggleRow then
+							local curVal = (rowFrame :: any)._toggleValue
+							self.onToggleRow(row.key, not curVal)
+						end
+					end)
+				else
+					local valLabel = Instance.new("TextLabel")
+					valLabel.Name = "Value"
+					valLabel.BackgroundTransparency = 1
+					valLabel.Position = UDim2.new(0.5, 0, 0, 0)
+					valLabel.Size = UDim2.new(0.5, -8, 1, 0)
+					valLabel.Font = Enum.Font.Gotham
+					valLabel.Text = tostring(row.value)
+					valLabel.TextColor3 = PANEL_TEXT_MUTED
+					valLabel.TextSize = 12
+					valLabel.TextXAlignment = Enum.TextXAlignment.Right
+					valLabel.Parent = rowFrame
+				end
+			end
+		end
+
+		for _, stale in pairs(existingRows) do
+			stale:Destroy()
 		end
 	end
 end

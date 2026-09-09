@@ -54,6 +54,7 @@ end
 
 local function renderGui()
 	if not viewInstance then return end
+	if not isGuiVisible then return end
 
 	local orderedPanels = {}
 	for key, panel in pairs(panelsByKey) do
@@ -80,6 +81,7 @@ local function renderGui()
 				key = entry.key,
 				displayName = entry.label,
 				value = entry.value,
+				order = entry.order or 50,
 				rowType = "value",
 			})
 		end
@@ -89,10 +91,18 @@ local function renderGui()
 				key = action.key,
 				displayName = action.label,
 				value = "Execute",
+				order = action.order or 100,
 				rowType = "action",
 				callback = action.callback,
 			})
 		end
+
+		table.sort(rows, function(a, b)
+			if a.order ~= b.order then
+				return a.order < b.order
+			end
+			return a.key < b.key
+		end)
 	end
 
 	viewInstance:render({
@@ -115,6 +125,8 @@ function DebugGuiModule.registerPanel(key: string, displayName: string, order: n
 			order = order or 10,
 			entries = {},
 			actions = {},
+			nextEntryOrder = 1,
+			nextActionOrder = 100,
 		}
 		panelsByKey[key] = panel
 		log("📌 Registered debug panel tab: %q (%s)", displayName, key)
@@ -129,23 +141,41 @@ function DebugGuiModule.registerPanel(key: string, displayName: string, order: n
 end
 
 --- Updates a status row entry on a debug panel tab.
-function DebugGuiModule.setEntry(panelKey: string, entryKey: string, label: string, value: string)
+function DebugGuiModule.setEntry(panelKey: string, entryKey: string, label: string, value: string, order: number?)
 	local panel = panelsByKey[panelKey] or DebugGuiModule.registerPanel(panelKey, panelKey)
+	if not panel.nextEntryOrder then
+		panel.nextEntryOrder = 1
+	end
+	local existing = panel.entries[entryKey]
+	local entryOrder = order or (existing and existing.order) or panel.nextEntryOrder
+	if not existing and not order then
+		panel.nextEntryOrder += 1
+	end
 	panel.entries[entryKey] = {
 		key = entryKey,
 		label = label,
 		value = value,
+		order = entryOrder,
 	}
 	renderGui()
 end
 
 --- Adds an interactive action button to a debug panel tab.
-function DebugGuiModule.setAction(panelKey: string, actionKey: string, label: string, callback: () -> ())
+function DebugGuiModule.setAction(panelKey: string, actionKey: string, label: string, callback: () -> (), order: number?)
 	local panel = panelsByKey[panelKey] or DebugGuiModule.registerPanel(panelKey, panelKey)
+	if not panel.nextActionOrder then
+		panel.nextActionOrder = 100
+	end
+	local existing = panel.actions[actionKey]
+	local actionOrder = order or (existing and existing.order) or panel.nextActionOrder
+	if not existing and not order then
+		panel.nextActionOrder += 1
+	end
 	panel.actions[actionKey] = {
 		key = actionKey,
 		label = label,
 		callback = callback,
+		order = actionOrder,
 	}
 	renderGui()
 end
@@ -168,7 +198,13 @@ function DebugGuiModule.toggleVisibility()
 		end
 	end
 
-	renderGui()
+	if viewInstance then
+		viewInstance.screenGui.Enabled = isGuiVisible
+	end
+
+	if isGuiVisible then
+		renderGui()
+	end
 end
 
 --- Initializes the hotkey listener ('P' key).
