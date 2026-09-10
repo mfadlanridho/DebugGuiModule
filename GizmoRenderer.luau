@@ -84,23 +84,11 @@ function GizmoRenderer:getMarker(name: string, color: Color3): BasePart
 	return marker :: BasePart
 end
 
-function GizmoRenderer:getWireSphere(name: string, color: Color3, radius: number?): SphereHandleAdornment
-	local sphere = self.folder:FindFirstChild(name)
-	if sphere ~= nil and not sphere:IsA("SphereHandleAdornment") then
-		sphere:Destroy()
-		sphere = nil
+function GizmoRenderer:getWireSphere(name: string, color: Color3?, radius: number?): string
+	if radius ~= nil and radius > 0 then
+		self:setWireSphere(name, Vector3.zero, radius, color)
 	end
-
-	if sphere == nil then
-		sphere = Instance.new("SphereHandleAdornment")
-		sphere.Name = name
-		sphere.Adornee = Workspace.Terrain
-		sphere.AlwaysOnTop = false
-		sphere.Parent = self.folder
-	end
-
-	self:setWireSphere(sphere :: SphereHandleAdornment, Vector3.zero, radius or self.markerSize, color)
-	return sphere :: SphereHandleAdornment
+	return name
 end
 
 function GizmoRenderer:getWireBox(name: string, color: Color3, size: Vector3?): BoxHandleAdornment
@@ -196,11 +184,45 @@ function GizmoRenderer:setMarker(marker: BasePart, position: Vector3, color: Col
 	marker.CFrame = CFrame.new(position)
 end
 
-function GizmoRenderer:setWireSphere(sphere: SphereHandleAdornment, position: Vector3, radius: number?, color: Color3?)
-	sphere.CFrame = CFrame.new(position)
-	sphere.Radius = radius or self.markerSize
-	sphere.Transparency = self.wireSphereTransparency
-	if color ~= nil then sphere.Color3 = color end
+local WIRE_SPHERE_SEGMENTS = 16
+local WIRE_SPHERE_ANGLE_STEP = (math.pi * 2) / WIRE_SPHERE_SEGMENTS
+
+function GizmoRenderer:setWireSphere(
+	target: any,
+	position: Vector3,
+	radius: number?,
+	color: Color3?,
+	planes: { string }?
+)
+	local name = if typeof(target) == "string" then target else (target.Name or "WireSphere")
+	local r = radius or self.markerSize
+	local c = color or Color3.fromRGB(0, 230, 255)
+	local targetPlanes = planes or { "XZ", "XY", "YZ" }
+
+	for _, plane in ipairs(targetPlanes) do
+		for i = 1, WIRE_SPHERE_SEGMENTS do
+			local a1 = (i - 1) * WIRE_SPHERE_ANGLE_STEP
+			local a2 = i * WIRE_SPHERE_ANGLE_STEP
+
+			local p1: Vector3
+			local p2: Vector3
+
+			if plane == "XZ" then
+				p1 = position + Vector3.new(math.cos(a1) * r, 0, math.sin(a1) * r)
+				p2 = position + Vector3.new(math.cos(a2) * r, 0, math.sin(a2) * r)
+			elseif plane == "XY" then
+				p1 = position + Vector3.new(math.cos(a1) * r, math.sin(a1) * r, 0)
+				p2 = position + Vector3.new(math.cos(a2) * r, math.sin(a2) * r, 0)
+			else -- "YZ"
+				p1 = position + Vector3.new(0, math.sin(a1) * r, math.cos(a1) * r)
+				p2 = position + Vector3.new(0, math.sin(a2) * r, math.cos(a2) * r)
+			end
+
+			local lineName = string.format("%s_%s_%d", name, plane, i)
+			local line = self:getLine(lineName, c)
+			self:setLine(line, p1, p2, c)
+		end
+	end
 end
 
 function GizmoRenderer:setWireBox(box: BoxHandleAdornment, cf: CFrame, size: Vector3, color: Color3?)
