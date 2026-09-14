@@ -205,6 +205,8 @@ function DebugGuiView.new(playerGui)
 	self.placeholderLabel = placeholderLabel
 	self.onSelectPanel = nil
 	self.onToggleRow = nil
+	self.actionCallbacks = {}
+	self.toggleValues = {}
 
 	return self
 end
@@ -304,7 +306,7 @@ function DebugGuiView:render(model)
 					if button then
 						button.Text = row.value or "Execute"
 					end
-					(rowFrame :: any)._actionCallback = row.callback
+					self.actionCallbacks[rowKey] = row.callback
 				elseif row.rowType == "toggle" then
 					local toggleBtn = rowFrame:FindFirstChild("ToggleBtn") :: TextButton?
 					if toggleBtn then
@@ -312,7 +314,7 @@ function DebugGuiView:render(model)
 						toggleBtn.Text = if row.value then "ON" else "OFF"
 						toggleBtn.TextColor3 = if row.value then PANEL_BACKGROUND else PANEL_TEXT_MUTED
 					end
-					(rowFrame :: any)._toggleValue = row.value
+					self.toggleValues[rowKey] = row.value
 				else
 					local valLabel = rowFrame:FindFirstChild("Value") :: TextLabel?
 					if valLabel then
@@ -345,7 +347,7 @@ function DebugGuiView:render(model)
 				label.Parent = rowFrame
 
 				if row.rowType == "action" then
-					(rowFrame :: any)._actionCallback = row.callback
+					self.actionCallbacks[rowKey] = row.callback
 					local button = Instance.new("TextButton")
 					button.Name = "ActionButton"
 					button.BackgroundColor3 = PANEL_ACCENT
@@ -359,13 +361,13 @@ function DebugGuiView:render(model)
 					createCorner(button, 6)
 
 					button.MouseButton1Click:Connect(function()
-						local cb = (rowFrame :: any)._actionCallback
+						local cb = self.actionCallbacks[rowKey]
 						if cb then
 							cb()
 						end
 					end)
 				elseif row.rowType == "toggle" then
-					(rowFrame :: any)._toggleValue = row.value
+					self.toggleValues[rowKey] = row.value
 					local toggleBtn = Instance.new("TextButton")
 					toggleBtn.Name = "ToggleBtn"
 					toggleBtn.BackgroundColor3 = if row.value then PANEL_ACCENT else PANEL_BACKGROUND
@@ -380,7 +382,7 @@ function DebugGuiView:render(model)
 
 					toggleBtn.MouseButton1Click:Connect(function()
 						if self.onToggleRow then
-							local curVal = (rowFrame :: any)._toggleValue
+							local curVal = self.toggleValues[rowKey]
 							self.onToggleRow(row.key, not curVal)
 						end
 					end)
@@ -400,8 +402,10 @@ function DebugGuiView:render(model)
 			end
 		end
 
-		for _, stale in pairs(existingRows) do
+		for staleKey, stale in pairs(existingRows) do
 			stale:Destroy()
+			self.actionCallbacks[staleKey] = nil
+			self.toggleValues[staleKey] = nil
 		end
 	end
 end
