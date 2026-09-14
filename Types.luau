@@ -9,12 +9,14 @@ export type DebugPanelEntry = {
 	label: string,
 	value: string,
 	color: Color3?,
+	order: number?,
 }
 
 export type DebugPanelAction = {
 	key: string,
 	label: string,
 	callback: () -> (),
+	order: number?,
 }
 
 export type DebugPanel = {

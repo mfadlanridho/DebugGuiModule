@@ -76,7 +76,19 @@ local function renderGui()
 	if selectedPanelKey and panelsByKey[selectedPanelKey] then
 		local activePanel = panelsByKey[selectedPanelKey]
 		-- Add status entries
+		local entryList = {}
 		for _, entry in pairs(activePanel.entries) do
+			table.insert(entryList, entry)
+		end
+		table.sort(entryList, function(a, b)
+			local orderA = a.order or 999
+			local orderB = b.order or 999
+			if orderA ~= orderB then
+				return orderA < orderB
+			end
+			return a.key < b.key
+		end)
+		for _, entry in ipairs(entryList) do
 			table.insert(rows, {
 				key = entry.key,
 				displayName = entry.label,
@@ -85,8 +97,21 @@ local function renderGui()
 				rowType = "value",
 			})
 		end
+
 		-- Add action buttons
+		local actionList = {}
 		for _, action in pairs(activePanel.actions) do
+			table.insert(actionList, action)
+		end
+		table.sort(actionList, function(a, b)
+			local orderA = a.order or 999
+			local orderB = b.order or 999
+			if orderA ~= orderB then
+				return orderA < orderB
+			end
+			return a.key < b.key
+		end)
+		for _, action in ipairs(actionList) do
 			table.insert(rows, {
 				key = action.key,
 				displayName = action.label,
