@@ -193,6 +193,79 @@ function DebugGuiView.new(playerGui)
 	placeholderLabel.Visible = false
 	placeholderLabel.Parent = contentFrame
 
+	-- Floating Dropdown Overlay Modal
+	local dropdownModal = Instance.new("Frame")
+	dropdownModal.Name = "DropdownModal"
+	dropdownModal.BackgroundColor3 = PANEL_SURFACE
+	dropdownModal.Position = UDim2.fromOffset(130, 56)
+	dropdownModal.Size = UDim2.new(1, -144, 1, -68)
+	dropdownModal.ZIndex = 50
+	dropdownModal.Visible = false
+	dropdownModal.Parent = rootFrame
+	createCorner(dropdownModal, 10)
+	createStroke(dropdownModal, PANEL_ACCENT, 0.3)
+
+	local modalHeader = Instance.new("Frame")
+	modalHeader.Name = "ModalHeader"
+	modalHeader.BackgroundTransparency = 1
+	modalHeader.Size = UDim2.new(1, 0, 0, 36)
+	modalHeader.ZIndex = 51
+	modalHeader.Parent = dropdownModal
+
+	local searchBox = Instance.new("TextBox")
+	searchBox.Name = "SearchBox"
+	searchBox.BackgroundColor3 = PANEL_BACKGROUND
+	searchBox.Position = UDim2.fromOffset(8, 6)
+	searchBox.Size = UDim2.new(1, -44, 0, 24)
+	searchBox.Font = Enum.Font.Gotham
+	searchBox.PlaceholderText = "🔍 Filter..."
+	searchBox.PlaceholderColor3 = PANEL_TEXT_MUTED
+	searchBox.Text = ""
+	searchBox.TextColor3 = PANEL_TEXT
+	searchBox.TextSize = 11
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.ClearTextOnFocus = false
+	searchBox.ZIndex = 52
+	searchBox.Parent = modalHeader
+	createCorner(searchBox, 6)
+	local searchPad = Instance.new("UIPadding")
+	searchPad.PaddingLeft = UDim.new(0, 8)
+	searchPad.Parent = searchBox
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseButton"
+	closeBtn.BackgroundColor3 = PANEL_BACKGROUND
+	closeBtn.Position = UDim2.new(1, -30, 0, 6)
+	closeBtn.Size = UDim2.fromOffset(24, 24)
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.Text = "✕"
+	closeBtn.TextColor3 = PANEL_TEXT_MUTED
+	closeBtn.TextSize = 12
+	closeBtn.ZIndex = 52
+	closeBtn.Parent = modalHeader
+	createCorner(closeBtn, 6)
+
+	closeBtn.MouseButton1Click:Connect(function()
+		dropdownModal.Visible = false
+	end)
+
+	local dropdownScroll = Instance.new("ScrollingFrame")
+	dropdownScroll.Name = "OptionList"
+	dropdownScroll.BackgroundTransparency = 1
+	dropdownScroll.Position = UDim2.fromOffset(8, 40)
+	dropdownScroll.Size = UDim2.new(1, -16, 1, -46)
+	dropdownScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	dropdownScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	dropdownScroll.ScrollBarThickness = 4
+	dropdownScroll.ScrollBarImageColor3 = PANEL_BORDER
+	dropdownScroll.ZIndex = 51
+	dropdownScroll.Parent = dropdownModal
+
+	local dLayout = Instance.new("UIListLayout")
+	dLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	dLayout.Padding = UDim.new(0, 4)
+	dLayout.Parent = dropdownScroll
+
 	screenGui.Parent = playerGui
 
 	self.screenGui = screenGui
@@ -203,10 +276,17 @@ function DebugGuiView.new(playerGui)
 	self.tabList = tabList
 	self.rowList = rowList
 	self.placeholderLabel = placeholderLabel
+	self.dropdownModal = dropdownModal
+	self.dropdownSearchBox = searchBox
+	self.dropdownScroll = dropdownScroll
+	self.searchConn = nil
 	self.onSelectPanel = nil
 	self.onToggleRow = nil
 	self.actionCallbacks = {}
 	self.toggleValues = {}
+	self.dropdownCallbacks = {}
+	self.dropdownOptions = {}
+	self.dropdownCurrentValues = {}
 
 	return self
 end
@@ -307,6 +387,14 @@ function DebugGuiView:render(model)
 						button.Text = row.value or "Execute"
 					end
 					self.actionCallbacks[rowKey] = row.callback
+				elseif row.rowType == "dropdown" then
+					local dropBtn = rowFrame:FindFirstChild("DropdownButton") :: TextButton?
+					if dropBtn then
+						dropBtn.Text = string.format("%s  ▼", tostring(row.value or "Select..."))
+					end
+					self.dropdownCallbacks[rowKey] = row.callback
+					self.dropdownOptions[rowKey] = row.options
+					self.dropdownCurrentValues[rowKey] = tostring(row.value or "")
 				elseif row.rowType == "toggle" then
 					local toggleBtn = rowFrame:FindFirstChild("ToggleBtn") :: TextButton?
 					if toggleBtn then
@@ -338,7 +426,7 @@ function DebugGuiView:render(model)
 				label.Name = "Label"
 				label.BackgroundTransparency = 1
 				label.Position = UDim2.fromOffset(8, 0)
-				label.Size = UDim2.new(0.5, -8, 1, 0)
+				label.Size = UDim2.new(0.42, -8, 1, 0)
 				label.Font = Enum.Font.GothamMedium
 				label.Text = row.displayName
 				label.TextColor3 = PANEL_TEXT
@@ -351,8 +439,8 @@ function DebugGuiView:render(model)
 					local button = Instance.new("TextButton")
 					button.Name = "ActionButton"
 					button.BackgroundColor3 = PANEL_ACCENT
-					button.Position = UDim2.new(0.5, 0, 0.15, 0)
-					button.Size = UDim2.new(0.5, -8, 0.7, 0)
+					button.Position = UDim2.new(0.45, 0, 0.15, 0)
+					button.Size = UDim2.new(0.55, -8, 0.7, 0)
 					button.Font = Enum.Font.GothamBold
 					button.Text = row.value or "Execute"
 					button.TextColor3 = PANEL_BACKGROUND
@@ -365,6 +453,29 @@ function DebugGuiView:render(model)
 						if cb then
 							cb()
 						end
+					end)
+				elseif row.rowType == "dropdown" then
+					self.dropdownCallbacks[rowKey] = row.callback
+					self.dropdownOptions[rowKey] = row.options
+					self.dropdownCurrentValues[rowKey] = tostring(row.value or "")
+
+					local dropBtn = Instance.new("TextButton")
+					dropBtn.Name = "DropdownButton"
+					dropBtn.BackgroundColor3 = PANEL_SURFACE
+					dropBtn.Position = UDim2.new(0.45, 0, 0.15, 0)
+					dropBtn.Size = UDim2.new(0.55, -8, 0.7, 0)
+					dropBtn.Font = Enum.Font.GothamMedium
+					dropBtn.Text = string.format("%s  ▼", tostring(row.value or "Select..."))
+					dropBtn.TextColor3 = PANEL_ACCENT
+					dropBtn.TextSize = 11
+					dropBtn.Parent = rowFrame
+					createCorner(dropBtn, 6)
+					createStroke(dropBtn, PANEL_BORDER, 0.5)
+
+					dropBtn.MouseButton1Click:Connect(function()
+						local opts = self.dropdownOptions[rowKey] or {}
+						local curVal = self.dropdownCurrentValues[rowKey] or ""
+						self:openDropdown(rowKey, opts, curVal)
 					end)
 				elseif row.rowType == "toggle" then
 					self.toggleValues[rowKey] = row.value
@@ -406,8 +517,66 @@ function DebugGuiView:render(model)
 			stale:Destroy()
 			self.actionCallbacks[staleKey] = nil
 			self.toggleValues[staleKey] = nil
+			self.dropdownCallbacks[staleKey] = nil
+			self.dropdownOptions[staleKey] = nil
+			self.dropdownCurrentValues[staleKey] = nil
 		end
 	end
+end
+
+function DebugGuiView:openDropdown(rowKey: string, options: { string }, currentSelected: string)
+	self.dropdownModal.Visible = true
+	self.dropdownSearchBox.Text = ""
+
+	clearChildren(self.dropdownScroll)
+
+	local optionButtons: { [string]: TextButton } = {}
+	for idx, opt in ipairs(options) do
+		local isSelected = (opt == currentSelected)
+		local optBtn = Instance.new("TextButton")
+		optBtn.Name = "Opt_" .. opt
+		optBtn.BackgroundColor3 = if isSelected then PANEL_ACCENT else PANEL_SURFACE_ALT
+		optBtn.Size = UDim2.new(1, 0, 0, 26)
+		optBtn.Font = Enum.Font.GothamMedium
+		optBtn.Text = (if isSelected then "✓  " else "   ") .. opt
+		optBtn.TextColor3 = if isSelected then PANEL_BACKGROUND else PANEL_TEXT
+		optBtn.TextSize = 11
+		optBtn.TextXAlignment = Enum.TextXAlignment.Left
+		optBtn.LayoutOrder = idx
+		optBtn.ZIndex = 52
+		optBtn.Parent = self.dropdownScroll
+		createCorner(optBtn, 4)
+
+		local btnPad = Instance.new("UIPadding")
+		btnPad.PaddingLeft = UDim.new(0, 8)
+		btnPad.Parent = optBtn
+
+		optBtn.MouseButton1Click:Connect(function()
+			self.dropdownModal.Visible = false
+			local cb = self.dropdownCallbacks[rowKey]
+			if cb then
+				cb(opt)
+			end
+		end)
+
+		optionButtons[opt] = optBtn
+	end
+
+	if self.searchConn then
+		self.searchConn:Disconnect()
+		self.searchConn = nil
+	end
+
+	self.searchConn = self.dropdownSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local query = string.lower(self.dropdownSearchBox.Text)
+		for opt, btn in pairs(optionButtons) do
+			if query == "" or string.find(string.lower(opt), query, 1, true) ~= nil then
+				btn.Visible = true
+			else
+				btn.Visible = false
+			end
+		end
+	end)
 end
 
 function DebugGuiView:destroy()

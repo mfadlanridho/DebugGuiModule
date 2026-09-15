@@ -18,6 +18,7 @@ local GizmoRenderer = require(script.GizmoRenderer)
 export type DebugPanel = Types.DebugPanel
 export type DebugPanelEntry = Types.DebugPanelEntry
 export type DebugPanelAction = Types.DebugPanelAction
+export type DebugPanelDropdown = Types.DebugPanelDropdown
 
 local DebugGuiModule = {}
 DebugGuiModule.GizmoRenderer = GizmoRenderer
@@ -122,6 +123,33 @@ local function renderGui()
 			})
 		end
 
+		-- Add dropdown selectors
+		if activePanel.dropdowns then
+			local dropdownList = {}
+			for _, dropdown in pairs(activePanel.dropdowns) do
+				table.insert(dropdownList, dropdown)
+			end
+			table.sort(dropdownList, function(a, b)
+				local orderA = a.order or 999
+				local orderB = b.order or 999
+				if orderA ~= orderB then
+					return orderA < orderB
+				end
+				return a.key < b.key
+			end)
+			for _, dropdown in ipairs(dropdownList) do
+				table.insert(rows, {
+					key = dropdown.key,
+					displayName = dropdown.label,
+					value = dropdown.selected,
+					options = dropdown.options,
+					order = dropdown.order or 25,
+					rowType = "dropdown",
+					callback = dropdown.callback,
+				})
+			end
+		end
+
 		table.sort(rows, function(a, b)
 			if a.order ~= b.order then
 				return a.order < b.order
@@ -150,6 +178,7 @@ function DebugGuiModule.registerPanel(key: string, displayName: string, order: n
 			order = order or 10,
 			entries = {},
 			actions = {},
+			dropdowns = {},
 			nextEntryOrder = 1,
 			nextActionOrder = 100,
 		}
@@ -205,6 +234,34 @@ function DebugGuiModule.setAction(panelKey: string, actionKey: string, label: st
 	renderGui()
 end
 
+--- Adds or updates an interactive dropdown selector on a debug panel tab.
+function DebugGuiModule.setDropdown(
+	panelKey: string,
+	dropdownKey: string,
+	label: string,
+	options: { string },
+	selected: string?,
+	callback: (selected: string) -> (),
+	order: number?
+)
+	local panel = panelsByKey[panelKey] or DebugGuiModule.registerPanel(panelKey, panelKey)
+	if not panel.dropdowns then
+		panel.dropdowns = {}
+	end
+	local existing = panel.dropdowns[dropdownKey]
+	local dropdownOrder = order or (existing and existing.order) or 25
+	local selectedVal = selected or (existing and existing.selected) or (options and options[1]) or "Select..."
+	panel.dropdowns[dropdownKey] = {
+		key = dropdownKey,
+		label = label,
+		options = options or {},
+		selected = selectedVal,
+		callback = callback,
+		order = dropdownOrder,
+	}
+	renderGui()
+end
+
 --- Toggles debug menu overlay open/closed.
 function DebugGuiModule.toggleVisibility()
 	log("🔄 toggleVisibility called! isAllowed=%s", tostring(isAllowed()))
@@ -219,12 +276,18 @@ function DebugGuiModule.toggleVisibility()
 		viewInstance.onSelectPanel = function(key: string)
 			log("🖱️ Panel tab selected: %q", key)
 			selectedPanelKey = key
+			if viewInstance.dropdownModal then
+				viewInstance.dropdownModal.Visible = false
+			end
 			renderGui()
 		end
 	end
 
 	if viewInstance then
 		viewInstance.screenGui.Enabled = isGuiVisible
+		if not isGuiVisible and viewInstance.dropdownModal then
+			viewInstance.dropdownModal.Visible = false
+		end
 	end
 
 	if isGuiVisible then
